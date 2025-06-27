@@ -1,4 +1,4 @@
-name: build-K2P-Ubuntu24
+name: build-K2P-Ubuntu24-step-by-step
 
 on: 
   #push:
@@ -8,81 +8,137 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04  # 升级到最新的 Ubuntu 版本以获得更新的 GLIBC
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         target: [K2P]
         toolchain: [mipsel-linux-musl]
     steps:
-      - uses: actions/checkout@v4  # 升级到最新版本
+      - uses: actions/checkout@v4
         with:
           ref: dev
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.target }}-${{ matrix.toolchain }}
-      - uses: actions/setup-go@v5  # 升级到最新版本
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.23.0'
           check-latest: true
           cache: false
-      - uses: actions/setup-node@v4  # 升级到最新版本
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           check-latest: true
-      - name: Debug system info
-        run: |
-          echo "System info:"
-          uname -a
-          ldd --version
-          echo "Available GLIBC versions:"
-          find /lib* /usr/lib* -name "libc.so.*" 2>/dev/null | head -10
-          echo "GCC version:"
-          gcc --version
-      - name: Prepare
+      - name: Install all dependencies
         run: |
           sudo apt update
-          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache build-essential \
-            liblzma-dev zlib1g-dev libssl-dev libncurses5-dev libncursesw5-dev \
-            flex bison pkg-config texinfo xz-utils
-      - name: Verify dependencies
+          sudo apt install -y \
+            build-essential \
+            libtool-bin \
+            gperf \
+            python3-docutils \
+            autopoint \
+            gettext \
+            ccache \
+            liblzma-dev \
+            zlib1g-dev \
+            libssl-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
+            flex \
+            bison \
+            pkg-config \
+            texinfo \
+            xz-utils \
+            curl \
+            wget \
+            unzip \
+            rsync \
+            bc \
+            gawk \
+            cpio \
+            automake \
+            autoconf \
+            libtool \
+            m4
+      - name: Debug environment
         run: |
-          echo "Checking for required headers and libraries..."
-          pkg-config --exists liblzma && echo "liblzma: OK" || echo "liblzma: MISSING"
-          pkg-config --exists zlib && echo "zlib: OK" || echo "zlib: MISSING"
-          pkg-config --exists openssl && echo "openssl: OK" || echo "openssl: MISSING"
-          find /usr/include -name "lzma.h" 2>/dev/null | head -5
-          echo "XZ tools available:"
-          which xz || echo "xz not found"
-          which lzma || echo "lzma not found"
-      - name: Clean and rebuild toolchain
+          echo "=== System Info ==="
+          uname -a
+          ldd --version | head -3
+          echo "=== Dependencies Check ==="
+          pkg-config --exists liblzma && echo "✓ liblzma" || echo "✗ liblzma"
+          find /usr/include -name "lzma.h" 2>/dev/null | head -1
+          echo "=== Build Tools ==="
+          which make && make --version | head -1
+          which gcc && gcc --version | head -1
+          which autoconf && autoconf --version | head -1
+      - name: Full clean
         run: |
-          echo "Cleaning existing toolchain..."
+          echo "Performing full clean..."
+          make distclean || true
+          make clean || true
+          rm -rf trunk/build/* || true
           rm -rf toolchain/toolchain-mipsel || true
-          echo "Rebuilding toolchain for current system..."
-          make -C toolchain clean || true
+          git clean -fd trunk/build/ || true
+      - name: Download toolchain
+        run: |
+          echo "Downloading toolchain..."
           make -C toolchain download CT_TARGET=${{ matrix.toolchain }}
       - name: Verify toolchain
         run: |
-          echo "Checking if toolchain is properly built..."
-          if [ -d "toolchain/toolchain-mipsel" ]; then
-            echo "Toolchain directory exists"
-            ls -la toolchain/toolchain-mipsel/bin/ | head -10
-            echo "Testing cross-compiler..."
-            if [ -f "toolchain/toolchain-mipsel/bin/mipsel-linux-musl-gcc" ]; then
-              echo "Cross-compiler found, testing..."
-              echo 'int main(){return 0;}' | toolchain/toolchain-mipsel/bin/mipsel-linux-musl-gcc -x c - -o /tmp/test || echo "Cross-compiler test failed"
-            else
-              echo "Cross-compiler not found!"
-              exit 1
-            fi
-          else
-            echo "Toolchain directory not found!"
+          echo "Verifying toolchain..."
+          if [ ! -d "toolchain/toolchain-mipsel" ]; then
+            echo "Toolchain not found!"
             exit 1
           fi
-      - name: Build
+          ls -la toolchain/toolchain-mipsel/bin/ | grep mipsel-linux-musl-gcc
+          echo "Testing cross-compiler..."
+          echo 'int main(){return 0;}' > /tmp/test.c
+          toolchain/toolchain-mipsel/bin/mipsel-linux-musl-gcc /tmp/test.c -o /tmp/test
+          echo "Cross-compiler test passed"
+      - name: Download all sources
         run: |
+          echo "Downloading all source packages..."
+          make download
+      - name: Prepare build environment
+        run: |
+          echo "Preparing build environment..."
+          make dep
+      - name: Check critical sources
+        run: |
+          echo "=== Checking source preparation ==="
+          echo "Build directory contents:"
+          ls -la trunk/build/ | head -20
+          echo "Checking ipset specifically:"
+          if [ -d "trunk/build/ipset-7.11" ]; then
+            echo "ipset directory exists"
+            ls -la trunk/build/ipset-7.11/ | head -10
+            if [ -f "trunk/build/ipset-7.11/Makefile" ]; then
+              echo "✓ ipset Makefile found"
+            else
+              echo "✗ ipset Makefile missing"
+              echo "Available files in ipset directory:"
+              find trunk/build/ipset-7.11/ -type f | head -10
+            fi
+          else
+            echo "✗ ipset directory not found"
+          fi
+      - name: Build firmware
+        run: |
+          echo "Starting firmware build..."
           make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
+      - name: Check results
+        run: |
+          echo "=== Build Results ==="
+          if [ -d "trunk/images" ]; then
+            echo "Build completed successfully!"
+            ls -la trunk/images/
+          else
+            echo "Build failed - no images directory"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}-${{ matrix.toolchain }}
+          name: ${{ matrix.target }}-${{ matrix.toolchain }}-firmware
           path: trunk/images/*.trx
