@@ -602,16 +602,17 @@ LED_CONTROL(int gpio_led, int flag)
 	switch (gpio_led)
 	{
 		case LED_PWR:
+			//LED_PWR与其它LED互斥
 			led_control(LED_WIFI, !flag);
 			led_control(LED_WAN, 0);
 			break;
 		case LED_WIFI:
+			// LED_WIFI只与LED_PWR互斥，不影响LED_WAN
 			led_control(LED_PWR, !flag);
-			led_control(LED_WAN, 0);
 			break;
 		case LED_WAN:
+			// LED_WAN只与LED_PWR互斥，不影响LED_WIFI
 			led_control(LED_PWR, 0);
-			led_control(LED_WIFI, !flag);
 			break;
 		default:
 			break;
