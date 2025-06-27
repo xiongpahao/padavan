@@ -1,4 +1,4 @@
-name: build-K2P-ubuntu24
+name: build-K2P-Ubuntu24
 
 on: 
   #push:
@@ -41,13 +41,44 @@ jobs:
       - name: Prepare
         run: |
           sudo apt update
-          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache build-essential
+          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache build-essential \
+            liblzma-dev zlib1g-dev libssl-dev libncurses5-dev libncursesw5-dev \
+            flex bison pkg-config texinfo xz-utils
+      - name: Verify dependencies
+        run: |
+          echo "Checking for required headers and libraries..."
+          pkg-config --exists liblzma && echo "liblzma: OK" || echo "liblzma: MISSING"
+          pkg-config --exists zlib && echo "zlib: OK" || echo "zlib: MISSING"
+          pkg-config --exists openssl && echo "openssl: OK" || echo "openssl: MISSING"
+          find /usr/include -name "lzma.h" 2>/dev/null | head -5
+          echo "XZ tools available:"
+          which xz || echo "xz not found"
+          which lzma || echo "lzma not found"
       - name: Clean and rebuild toolchain
         run: |
           echo "Cleaning existing toolchain..."
           rm -rf toolchain/toolchain-mipsel || true
           echo "Rebuilding toolchain for current system..."
+          make -C toolchain clean || true
           make -C toolchain download CT_TARGET=${{ matrix.toolchain }}
+      - name: Verify toolchain
+        run: |
+          echo "Checking if toolchain is properly built..."
+          if [ -d "toolchain/toolchain-mipsel" ]; then
+            echo "Toolchain directory exists"
+            ls -la toolchain/toolchain-mipsel/bin/ | head -10
+            echo "Testing cross-compiler..."
+            if [ -f "toolchain/toolchain-mipsel/bin/mipsel-linux-musl-gcc" ]; then
+              echo "Cross-compiler found, testing..."
+              echo 'int main(){return 0;}' | toolchain/toolchain-mipsel/bin/mipsel-linux-musl-gcc -x c - -o /tmp/test || echo "Cross-compiler test failed"
+            else
+              echo "Cross-compiler not found!"
+              exit 1
+            fi
+          else
+            echo "Toolchain directory not found!"
+            exit 1
+          fi
       - name: Build
         run: |
           make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
