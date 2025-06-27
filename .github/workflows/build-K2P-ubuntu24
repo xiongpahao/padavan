@@ -1,0 +1,57 @@
+name: build-K2P
+
+on: 
+  #push:
+   # branches:
+   # - "*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04  # 升级到最新的 Ubuntu 版本以获得更新的 GLIBC
+    strategy:
+      matrix:
+        target: [K2P]
+        toolchain: [mipsel-linux-musl]
+    steps:
+      - uses: actions/checkout@v4  # 升级到最新版本
+        with:
+          ref: dev
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.target }}-${{ matrix.toolchain }}
+      - uses: actions/setup-go@v5  # 升级到最新版本
+        with:
+          go-version: '1.23.0'
+          check-latest: true
+          cache: false
+      - uses: actions/setup-node@v4  # 升级到最新版本
+        with:
+          node-version: 20
+          check-latest: true
+      - name: Debug system info
+        run: |
+          echo "System info:"
+          uname -a
+          ldd --version
+          echo "Available GLIBC versions:"
+          find /lib* /usr/lib* -name "libc.so.*" 2>/dev/null | head -10
+          echo "GCC version:"
+          gcc --version
+      - name: Prepare
+        run: |
+          sudo apt update
+          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache build-essential
+      - name: Clean and rebuild toolchain
+        run: |
+          echo "Cleaning existing toolchain..."
+          rm -rf toolchain/toolchain-mipsel || true
+          echo "Rebuilding toolchain for current system..."
+          make -C toolchain download CT_TARGET=${{ matrix.toolchain }}
+      - name: Build
+        run: |
+          make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-${{ matrix.toolchain }}
+          path: trunk/images/*.trx
