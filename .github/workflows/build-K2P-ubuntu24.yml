@@ -43,7 +43,8 @@ jobs:
           sudo apt update
           sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache build-essential \
             liblzma-dev zlib1g-dev libssl-dev libncurses5-dev libncursesw5-dev \
-            flex bison pkg-config texinfo xz-utils curl wget unzip rsync bc gawk cpio
+            flex bison pkg-config texinfo xz-utils libtool-ltdl-dev autotools-dev \
+            automake autoconf m4
       - name: Verify dependencies
         run: |
           echo "Checking for required headers and libraries..."
@@ -54,11 +55,16 @@ jobs:
           echo "XZ tools available:"
           which xz || echo "xz not found"
           which lzma || echo "lzma not found"
-      - name: Clean workspace and rebuild toolchain
+          echo "Checking autotools files:"
+          ls -la /usr/share/aclocal/ltdl.m4 2>/dev/null && echo "ltdl.m4: OK" || echo "ltdl.m4: MISSING"
+          ls -la /usr/share/aclocal/libtool.m4 2>/dev/null && echo "libtool.m4: OK" || echo "libtool.m4: MISSING"
+          echo "Autotools versions:"
+          autoconf --version | head -1
+          automake --version | head -1
+          libtool --version | head -1
+      - name: Clean and rebuild toolchain
         run: |
-          echo "Cleaning workspace..."
-          make clean || true
-          rm -rf trunk/build/* || true
+          echo "Cleaning existing toolchain..."
           rm -rf toolchain/toolchain-mipsel || true
           echo "Rebuilding toolchain for current system..."
           make -C toolchain clean || true
@@ -81,19 +87,6 @@ jobs:
             echo "Toolchain directory not found!"
             exit 1
           fi
-      - name: Download and prepare sources
-        run: |
-          echo "Downloading all required sources..."
-          make download || true
-          echo "Checking critical source packages..."
-          if [ ! -d "trunk/build/ipset-7.11" ] || [ ! -f "trunk/build/ipset-7.11/Makefile" ]; then
-            echo "ipset source not properly prepared, attempting to fix..."
-            rm -rf trunk/build/ipset-* || true
-            make -C trunk/user/ipset download || true
-            make -C trunk/user/ipset prepare || true
-          fi
-          echo "Listing build directory contents:"
-          ls -la trunk/build/ | head -20
       - name: Build
         run: |
           make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
