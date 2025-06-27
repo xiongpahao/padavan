@@ -41,10 +41,18 @@ jobs:
       - name: Prepare
         run: |
           sudo apt update
-          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache build-essential \
+          # Search for the correct package name for ltdl
+          echo "Searching for ltdl packages..."
+          apt search ltdl 2>/dev/null | grep -E "(ltdl|libtool)" | head -5 || true
+          
+          # Install main packages
+          sudo apt install -y libtool-bin gperf python3-docutils autopoint gettext ccache build-essential \
             liblzma-dev zlib1g-dev libssl-dev libncurses5-dev libncursesw5-dev \
-            flex bison pkg-config texinfo xz-utils libtool-ltdl-dev autotools-dev \
-            automake autoconf m4
+            flex bison pkg-config texinfo xz-utils autotools-dev \
+            automake autoconf m4 libtool
+          
+          # Try to install ltdl dev package with multiple possible names
+          sudo apt install -y libltdl-dev || sudo apt install -y libltdl7-dev || echo "ltdl dev package not found, continuing..."
       - name: Verify dependencies
         run: |
           echo "Checking for required headers and libraries..."
