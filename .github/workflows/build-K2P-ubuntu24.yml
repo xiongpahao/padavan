@@ -1,4 +1,4 @@
-name: build-K2P
+name: build-K2P-ubuntu24
 
 on: 
   #push:
